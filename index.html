@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IIoT Digital Twin Dashboard</title>
+    <!-- استيراد المكتبات -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body { background-color: #0e1117; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { background-color: #262730; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body class="p-8">
+
+    <!-- شريط التنبيهات الحرجة -->
+    <div id="alert-banner" class="hidden mb-6 p-4 bg-red-600 text-white font-bold text-center text-lg rounded-lg shadow-lg animate-pulse">
+        🚨 [CRITICAL ALERT] Equipment Health Below 80% - Immediate Inspection Required!
+    </div>
+
+    <!-- العنوان الرئيسي -->
+    <div class="mb-8 flex justify-between items-center">
+        <div>
+            <h1 class="text-4xl font-bold mb-2">🏭 Smart Factory: Predictive Maintenance & Digital Twin</h1>
+            <p class="text-gray-400">Real-time Telemetry & Remaining Useful Life (RUL) Analytics</p>
+        </div>
+    </div>
+
+    <hr class="border-gray-700 mb-8">
+
+    <!-- كرت أزرار التحكم العكسي مع مؤشر LED -->
+    <div class="card mb-8 border border-gray-700">
+        <!-- Header with LED Indicator -->
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-200 flex items-center gap-2">
+                <i class="fas fa-sliders-h text-blue-400"></i> Bi-Directional PLC Control
+            </h2>
+            
+            <!-- Live LED Status Badge -->
+            <div class="flex items-center gap-2 bg-[#11111b] px-3 py-1 rounded-full border border-gray-700">
+                <span id="status-led" class="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse"></span>
+                <span id="status-text" class="text-xs font-bold text-emerald-400 uppercase tracking-wider">NORMAL RUN</span>
+            </div>
+        </div>
+
+        <!-- أزرار التحكم الثلاثة -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button onclick="sendControl('emergency_stop')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 shadow-md active:scale-95 border border-red-500/50">
+                <i class="fas fa-hand-paper"></i> Emergency Stop
+            </button>
+            
+            <button onclick="sendControl('reduce_speed')" class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 shadow-md active:scale-95 border border-amber-500/50">
+                <i class="fas fa-tachometer-alt"></i> Reduce Speed
+            </button>
+
+            <button onclick="sendControl('reset_speed')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 shadow-md active:scale-95 border border-emerald-500/50">
+                <i class="fas fa-undo"></i> Full Speed / Reset
+            </button>
+        </div>
+    </div>
+
+    <!-- المؤشرات الرقمية (Health & RUL) -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="card text-center border-t-4 border-orange-500">
+            <h3 class="text-lg text-gray-400">⚙️ VFD Motor Speed</h3>
+            <p id="vfd_val" class="text-3xl font-bold text-orange-500 mt-2">0.0 Hz</p>
+        </div>
+        <div class="card text-center border-t-4 border-teal-400">
+            <h3 class="text-lg text-gray-400">🟢 Sorter 1</h3>
+            <p id="h1_val" class="text-2xl font-bold text-teal-400 mt-1">Health: 0%</p>
+            <p id="rul1_val" class="text-sm text-gray-400 mt-1">RUL: -- Hrs</p>
+        </div>
+        <div class="card text-center border-t-4 border-pink-500">
+            <h3 class="text-lg text-gray-400">🟡 Sorter 2</h3>
+            <p id="h2_val" class="text-2xl font-bold text-pink-500 mt-1">Health: 0%</p>
+            <p id="rul2_val" class="text-sm text-gray-400 mt-1">RUL: -- Hrs</p>
+        </div>
+        <div class="card text-center border-t-4 border-yellow-400">
+            <h3 class="text-lg text-gray-400">🔴 Sorter 3</h3>
+            <p id="h3_val" class="text-2xl font-bold text-yellow-400 mt-1">Health: 0%</p>
+            <p id="rul3_val" class="text-sm text-gray-400 mt-1">RUL: -- Hrs</p>
+        </div>
+    </div>
+
+    <!-- الرسوم البيانية -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="card">
+            <h2 class="text-xl font-bold mb-4">📉 Live Health Index Degradation</h2>
+            <canvas id="healthChart" height="150"></canvas>
+        </div>
+        <div class="card">
+            <h2 class="text-xl font-bold mb-4">⚡ Live VFD Motor Speed</h2>
+            <canvas id="vfdChart" height="150"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const maxDataPoints = 50;
+
+        // إعداد الرسم البياني للصحة
+        const ctxHealth = document.getElementById('healthChart').getContext('2d');
+        const healthChart = new Chart(ctxHealth, {
+            type: 'line',
+            data: { labels: [], datasets: [
+                { label: 'Sorter 1', borderColor: '#2dd4bf', data: [], borderWidth: 2, tension: 0.4, pointRadius: 0 },
+                { label: 'Sorter 2', borderColor: '#ec4899', data: [], borderWidth: 2, tension: 0.4, pointRadius: 0 },
+                { label: 'Sorter 3', borderColor: '#facc15', data: [], borderWidth: 2, tension: 0.4, pointRadius: 0 }
+            ]},
+            options: { 
+                responsive: true, 
+                animation: false, 
+                scales: { 
+                    y: { min: 70, max: 102, grid: { color: '#374151' } },
+                    x: { grid: { color: '#374151' }, ticks: { maxTicksLimit: 10 } }
+                }, 
+                plugins: { legend: { labels: { color: 'white' } } } 
+            }
+        });
+
+        // إعداد الرسم البياني للسرعة
+        const ctxVfd = document.getElementById('vfdChart').getContext('2d');
+        const vfdChart = new Chart(ctxVfd, {
+            type: 'line',
+            data: { labels: [], datasets: [
+                { label: 'VFD Speed (Hz)', borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.1)', fill: true, data: [], borderWidth: 2, stepped: true, pointRadius: 0 }
+            ]},
+            options: { 
+                responsive: true, 
+                animation: false, 
+                scales: { 
+                    y: { grid: { color: '#374151' } },
+                    x: { grid: { color: '#374151' }, ticks: { maxTicksLimit: 10 } }
+                }, 
+                plugins: { legend: { labels: { color: 'white' } } } 
+            }
+        });
+
+        // استقبال البيانات الموحدة عبر WebSocket
+        socket.on('live_telemetry', function(data) {
+            // تحديث القيم اللحظية
+            document.getElementById('vfd_val').innerText = data.VFD_Speed.toFixed(1) + ' Hz';
+            
+            document.getElementById('h1_val').innerText = 'Health: ' + data.S1_Health.toFixed(1) + ' %';
+            document.getElementById('rul1_val').innerText = 'RUL: ' + (data.S1_RUL !== undefined ? data.S1_RUL : '--') + ' Hrs';
+
+            document.getElementById('h2_val').innerText = 'Health: ' + data.S2_Health.toFixed(1) + ' %';
+            document.getElementById('rul2_val').innerText = 'RUL: ' + (data.S2_RUL !== undefined ? data.S2_RUL : '--') + ' Hrs';
+
+            document.getElementById('h3_val').innerText = 'Health: ' + data.S3_Health.toFixed(1) + ' %';
+            document.getElementById('rul3_val').innerText = 'RUL: ' + (data.S3_RUL !== undefined ? data.S3_RUL : '--') + ' Hrs';
+
+            // نظام التنبيه التلقائي
+            const alertBanner = document.getElementById('alert-banner');
+            if (data.S1_Health < 80 || data.S2_Health < 80 || data.S3_Health < 80) {
+                alertBanner.classList.remove('hidden');
+            } else {
+                alertBanner.classList.add('hidden');
+            }
+
+            // تحديث منحنيات الرسم البياني
+            const timeLabel = data.Timestamp;
+            
+            healthChart.data.labels.push(timeLabel);
+            healthChart.data.datasets[0].data.push(data.S1_Health);
+            healthChart.data.datasets[1].data.push(data.S2_Health);
+            healthChart.data.datasets[2].data.push(data.S3_Health);
+
+            vfdChart.data.labels.push(timeLabel);
+            vfdChart.data.datasets[0].data.push(data.VFD_Speed);
+
+            if (healthChart.data.labels.length > maxDataPoints) {
+                healthChart.data.labels.shift();
+                healthChart.data.datasets.forEach(dataset => dataset.data.shift());
+                
+                vfdChart.data.labels.shift();
+                vfdChart.data.datasets[0].data.shift();
+            }
+
+            healthChart.update();
+            vfdChart.update();
+        });
+
+        // دالة تحديث مؤشر LED
+        function updateSystemState(command) {
+            const led = document.getElementById('status-led');
+            const text = document.getElementById('status-text');
+
+            if (command === 'emergency_stop') {
+                led.className = 'w-3 h-3 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,1)] animate-ping';
+                text.className = 'text-xs font-bold text-red-400 uppercase tracking-wider';
+                text.innerText = 'E-STOP ACTIVE';
+            } 
+            else if (command === 'reduce_speed') {
+                led.className = 'w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)]';
+                text.className = 'text-xs font-bold text-amber-400 uppercase tracking-wider';
+                text.innerText = 'SPEED REDUCED';
+            } 
+            else if (command === 'reset_speed') {
+                led.className = 'w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse';
+                text.className = 'text-xs font-bold text-emerald-400 uppercase tracking-wider';
+                text.innerText = 'NORMAL RUN';
+            }
+        }
+
+        // دالة إرسال الأوامر إلى Python/PLC
+        function sendControl(commandText) {
+            fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: commandText })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const Toast = Swal.mixin({
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 2500,
+                    timerProgressBar: true,
+                    background: '#1e1e2e',
+                    color: '#fff'
+                });
+
+                if(data.status === 'success') {
+                    Toast.fire({ icon: 'success', title: data.msg });
+                    updateSystemState(commandText); // تحديث مؤشر LED
+                } else {
+                    Toast.fire({ icon: 'error', title: data.msg });
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+            });
+        }
+    </script>
+</body>
+</html>
