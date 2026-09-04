@@ -75,5 +75,5 @@ This repository serves as a foundational framework for advanced research in:
 **BENCHEIKH MOHAMED IDRIS**
 * Technical Sales and Systems Engineer 
 * Prospective PhD Candidate in Industrial Automation & Mechatronics
-* www.linkedin.com/in/fresh-highachieving-automationengineer-bencheikh-mohamed-idris
+* www.linkedin.com/in/bencheikh-mohamed-idris
 * bencheikhmohamed800@gmail.com
